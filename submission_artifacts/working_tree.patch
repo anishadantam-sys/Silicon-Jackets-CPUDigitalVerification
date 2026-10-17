@@ -1,0 +1,937 @@
+diff --git a/src/verilog/tb/cpu_driver.svh b/src/verilog/tb/cpu_driver.svh
+index e2cdd0c..3426a2b 100644
+--- a/src/verilog/tb/cpu_driver.svh
++++ b/src/verilog/tb/cpu_driver.svh
+@@ -19,9 +19,14 @@ class cpu_driver #(int DataSize=32, int AddrSize=14);
+     // Maximum cycles to wait for the CPU to halt
+     int run_timeout = 20000;
+ 
++    int response_timeout = 1000;
++
+     int timeouts;                // Counts timeout failures
+     bit last_run_completed;      // High when the CPU reports a clean halt
+ 
++    // im am using this as a debug variable --> data returned by most recent external read
++    logic[DataSize-1:0] last_rdata;
++
+     // Constructor
+     function new(virtual interface cpu_if #(DataSize, AddrSize) cpuVif,
+                  mailbox #(cpu_xbar_item #(DataSize, AddrSize)) xbar_box);
+@@ -29,6 +34,7 @@ class cpu_driver #(int DataSize=32, int AddrSize=14);
+       this.xbar_box = xbar_box;
+       this.timeouts = 0;
+       this.last_run_completed = 1'b0;
++      this.last_rdata = '0;
+     endfunction: new
+ 
+     // Put the DUT into a known reset state
+@@ -36,7 +42,18 @@ class cpu_driver #(int DataSize=32, int AddrSize=14);
+         // TODO: Drive all requests inactive, hold reset for several clock
+         // cycles, then release it and give the interface time to settle
+ 
+-        $fatal(1, "implement cpu_driver.reset_task");
++	cpuVif.cb.reset <= 1'b1;
++	cpuVif.cb.en_cpu <= 1'b0; 
++	cpuVif.cb.halt_cpu <= 1'b0;
++	cpuVif.cb.w_en <= 1'b0;
++	cpuVif.cb.r_en <= 1'b0; 
++	cpuVif.cb.addr <= '0;
++	cpuVif.cb.wdata <= '0;
++
++	repeat (5) @(cpuVif.cb)
++	cpuVif.cb.reset <= 1'b0;
++	repeat (2) @(cpuVif.cb);
++
+     endtask: reset_task
+ 
+     // Send one write through the DUT's external memory port
+@@ -48,7 +65,19 @@ class cpu_driver #(int DataSize=32, int AddrSize=14);
+         // TODO: Drive one external write through the clocking block for one request, 
+         // then return the port to idle
+ 
+-        $fatal(1, "implement cpu_driver.xbar_write");
++	cpuVif.cb.addr <= addr; 
++	cpuVif.cb.wdata <= data; 
++	cpuVif.cb.w_en <= 1'b1;
++	cpuVif.cb.r_en <= 1'b0; // ensures that read and write don't happen at the same time
++
++	@(cpuVif.cb); // waits for clocking block edge
++
++	// returning port to idle
++	cpuVif.cb.w_en <= 1'b0;
++	cpuVif.cb.addr <= '0; 
++	cpuVif.cb.wdata <= '0;
++	@(cpuVif.cb);
++
+     endtask: xbar_write
+ 
+     // Send one read through the external memory port and wait for its data
+@@ -66,14 +95,49 @@ class cpu_driver #(int DataSize=32, int AddrSize=14);
+         timed_out = 1'b0;
+         count     = 0;
+ 
+-        $fatal(1, "implement cpu_driver.xbar_read");
++	// enabling read
++	cpuVif.cb.addr <= addr; 
++	cpuVif.cb.r_en <= 1'b1;
++	cpuVif.cb.w_en <= 1'b0;
++
++	forever begin 
++		@(cpuVif.cb);
++		if (cpuVif.cb.rready) begin
++			last_rdata = cpuVif.cb.rdata;
++			break;
++		end
++		count++; 
++		if (count >= xbar_timeout) begin
++			timed_out = 1'b1;
++			break;
++		end
++	end
++
++	cpuVif.cb.r_en <= 1'b0;
++	cpuVif.cb.addr <= '0;
++	@(cpuVif.cb);
++
++	if (timed_out) begin
++		timeouts++;
++		$error($stime, " Drv: external read of 0x%04x timed out after%0d cycles\n", addr, xbar_timeout); 
++	end
++
+     endtask: xbar_read
+ 
+     // Drive a start request for one CPU run
+     task start_cpu();
+         // TODO: Pulse en_cpu
+ 
+-        $fatal(1, "implement cpu_driver.start_cpu");
++	cpuVif.cb.halt_cpu <= 1'b0;
++	cpuVif.cb.w_en <= 1'b0;
++	cpuVif.cb.r_en <= 1'b0;
++
++	@(cpuVif.cb);
++
++	cpuVif.cb.en_cpu <= 1'b1;
++	@(cpuVif.cb);
++	cpuVif.cb.en_cpu <= 1'b0;
++
+     endtask: start_cpu
+ 
+     // Wait for the CPU to halt, or fail after the allowed number of cycles
+@@ -89,7 +153,22 @@ class cpu_driver #(int DataSize=32, int AddrSize=14);
+ 
+         last_run_completed = 1'b0;
+ 
+-        $fatal(1, "implement cpu_driver.wait_for_halt");
++	while (!cpuVif.cb.cpu_halted && (cycles < limit)) begin
++		@(cpuVif.cb); 
++		cycles++;
++	end 
++
++	if (cpuVif.cb.cpu_halted) begin
++		last_run_completed = 1'b1;
++		while (cpuVif.cb.cpu_active) begin
++			@(cpuVif.cb);
++			cycles++;
++		end
++	end else begin
++		timeouts++;
++		$error($stime, "Drv: cpu execution timed out after %0d cycles without halting", limit); 
++	end
++
+     endtask: wait_for_halt
+ 
+     // Start CPU and wait for it to halt
+@@ -107,7 +186,18 @@ class cpu_driver #(int DataSize=32, int AddrSize=14);
+         // TODO: Assert an external halt request and wait, with a bound,
+         // until ownership returns to the external port
+ 
+-        $fatal(1, "TODO: implement cpu_driver.halt_cpu_now");
++	int count;
++
++	cpuVif.cb.halt_cpu <= 1'b1;
++	@(cpuVif.cb); 
++	cpuVif.cb.halt_cpu <= 1'b0;
++
++	count = 0;
++	while (count  < 10) begin
++		@(cpuVif.cb); 
++		count++;
++	end
++
+     endtask: halt_cpu_now
+ 
+     // Main driver loop. Keeps taking transactions from the mailbox and
+@@ -125,4 +215,4 @@ class cpu_driver #(int DataSize=32, int AddrSize=14);
+         end
+     endtask: run
+ 
+-endclass: cpu_driver
+\ No newline at end of file
++endclass: cpu_driver
+diff --git a/src/verilog/tb/cpu_monitor.svh b/src/verilog/tb/cpu_monitor.svh
+index bd7c6d4..0630a93 100644
+--- a/src/verilog/tb/cpu_monitor.svh
++++ b/src/verilog/tb/cpu_monitor.svh
+@@ -21,6 +21,7 @@ class cpu_monitor #(int DataSize=32, int AddrSize=14);
+     logic [DataSize-1:0] prev_store_data;   // Data for that store
+     bit                  prev_load_valid;   // A load was still active last cycle
+     logic [9:0]          prev_load_addr;    // Address of that load
++    logic [DataSize-1:0] prev_load_data;    // Data for that load
+ 
+     // Detecting state changes
+     bit prev_cpu_active;          // Previous CPU memory-ownership state
+@@ -52,7 +53,14 @@ class cpu_monitor #(int DataSize=32, int AddrSize=14);
+ 
+         // TODO: Create and send an xbar transaction through the mailbox
+ 
+-        $fatal(1, "TODO: Implement cpu_monitor.send");
++	cpu_xbar_item #(DataSize, AddrSize) xbarTrans = new();
++	
++	xbarTrans.kind = kind; 
++	xbarTrans.addr = addr;
++	xbarTrans.data = data;
++	xbarTrans.is_write = is_write;
++
++	mon_box.put(xbarTrans);	
+     endtask: send
+ 
+     // Match each external read request with its response
+@@ -62,7 +70,23 @@ class cpu_monitor #(int DataSize=32, int AddrSize=14);
+         // shows that rdata is valid. How should you handle register file vs SRAM
+         // reads?
+ 
+-        $fatal(1, "Implement cpu_monitor.observe_external_read");
++	// saving address when request starts
++	if (cpuVif.cb.r_en && !cpuVif.cb.cpu_active && !pending_read) begin
++		pending_read = 1'b1;
++		pending_read_addr = cpuVif.cb.addr;
++		if (window_of(pending_read_addr) != WIN_REG)
++			return;
++	end
++
++	// sending read & rdata is valid only when rready is high
++	if (pending_read && cpuVif.cb.rready) begin
++		if (log_transactions) begin
++			$display($stime, " Mon: External read Addr: 0x%04x, Data: 0x%08x\n", pending_read_addr, cpuVif.cb.rdata);
++		end
++	send(XBAR_READ, pending_read_addr, cpuVif.cb.rdata); 
++	pending_read = 1'b0;
++	end
++
+     endtask: observe_external_read
+ 
+     // Report each CPU data-memory request once
+@@ -72,7 +96,37 @@ class cpu_monitor #(int DataSize=32, int AddrSize=14);
+         // even if the request stays active during an SRAM wait. Clear saved state
+         // after the request ends.
+ 
+-        $fatal(1, "Implement cpu_monitor.observe_cpu_memory");
++	bit current_active, current_store, current_load;
++
++	current_active = cpuVif.cb.cpu_active && cpuVif.cb.dsram_en;
++	current_store = current_active && cpuVif.cb.dsram_write_en;
++	current_load = current_active && !cpuVif.cb.dsram_write_en;
++
++	if (prev_store_valid && !current_store) begin
++		send(CPU_STORE, {2'b01, prev_store_addr, 2'b00}, prev_store_data, 1'b1);
++		prev_store_valid = 1'b0;
++	end
++
++	if (prev_load_valid && !current_load) begin
++		send(CPU_LOAD, {2'b01, prev_load_addr, 2'b00}, prev_load_data);
++		prev_load_valid = 1'b0; 
++		load_in_flight = 1'b0;
++	end
++
++	if (current_store) begin 
++		prev_store_valid = 1'b1;
++		prev_store_addr = cpuVif.cb.dsram_addr;
++		prev_store_data = cpuVif.cb.dsram_wdata;
++	end 
++
++	if (current_load) begin
++		prev_load_valid = 1'b1; 
++		load_in_flight = 1'b1;
++		prev_load_addr = cpuVif.cb.dsram_addr;
++		prev_load_data = cpuVif.cb.dsram_rdata;
++		load_addr = cpuVif.cb.dsram_addr;
++	end
++
+     endtask: observe_cpu_memory
+ 
+     // Monitor the DUT once per clock and pass new events to the scoreboard
+@@ -123,4 +177,4 @@ class cpu_monitor #(int DataSize=32, int AddrSize=14);
+         end
+     endtask: run
+ 
+-endclass: cpu_monitor
+\ No newline at end of file
++endclass: cpu_monitor
+diff --git a/src/verilog/tb/cpu_sb.svh b/src/verilog/tb/cpu_sb.svh
+index 9a58a90..583bb22 100644
+--- a/src/verilog/tb/cpu_sb.svh
++++ b/src/verilog/tb/cpu_sb.svh
+@@ -150,7 +150,20 @@ class cpu_sb #(int DataSize=32, int AddrSize=14);
+                     // registers and the ordered store queue, reset per-program counters,
+                     // and mark the program active.
+ 
+-                    fail("CPU_START prediction is not implemented");
++			ref_model.load_imem(expected_imem);
++			ref_model.load_dmem(expected_dmem);
++			ref_model.run(MAX_REF_INSTR);
++
++			foreach (expected_regs[i]) begin
++				expected_regs[i] = ref_model.regs[i];
++			end
++			expected_stores = ref_model.store_queue;
++
++			observed_stores = 0; 
++			checking_regs = 1'b0;
++			program_running = 1'b1;
++
++                    //fail("CPU_START prediction is not implemented");
+                 end
+ 
+                 // Each CPU store must match the next expected store
+@@ -163,7 +176,26 @@ class cpu_sb #(int DataSize=32, int AddrSize=14);
+                     // follow the observed write even if the comparison fails; a write
+                     // completing after reset is real but has no active-program oracle.
+ 
+-                    fail("CPU_STORE checking is not implemented");
++			expected_dmem[trans.word_index()] = trans.data;
++			
++			if (!program_running) begin
++				$display($stime, " SB: CPU store dmem[0x%03x] <- 0x%08x outside an active program\n", trans.word_index(), trans.data); 
++			end else if (expected_stores.size() == 0) begin
++				checks++;
++				fail($sformatf("unexpected CPU store dmem[0x%03x] <- 0x%08x prediction has no stores left", trans.word_index(), trans.data));
++			end else begin 
++				checks++; 
++				expected_store = expected_stores.pop_front(); 
++				if ((expected_store.addr !== trans.word_index()) || (expected_store.data !== trans.data)) begin
++					fail($sformatf("store #%0d: got dmem[0x%03x] <- 0x%08x, expected dmem[0x%03x] <- 0x%08x", observed_stores, trans.word_index(), trans.data, expected_store.addr, expected_store.data));
++				end else begin
++					$display($stime, " SB: CPU store dmem[0x%03x] <- 0x%08x matches prediction\n", trans.word_index(), trans.data);
++				end
++			end
++
++			if (program_running) observed_stores++;
++
++                    //fail("CPU_STORE checking is not implemented");
+                 end
+ 
+                 // Each CPU load must return the current expected memory value
+@@ -174,7 +206,16 @@ class cpu_sb #(int DataSize=32, int AddrSize=14);
+                     // count the check/load, and compare the returned data with expected
+                     // memory data. Include the word index and both values in a failure.
+ 
+-                    fail("CPU_LOAD checking is not implemented");
++		    expected = expected_dmem[trans.word_index()];
++		    checks++; 
++
++		    if (trans.data !== expected) begin
++			fail($sformatf("CPU load of dmem[0x%03x] returned 0x%08x, expected 0x%08x", trans.word_index(), trans.data, expected)); 
++		    end else begin
++			$display($stime, " SB: CPU load dmem[0x%03x] = 0x%08x matched expected\n", trans.word_index(), trans.data);
++		    end
++
++                    //fail("CPU_LOAD checking is not implemented");
+                 end
+ 
+                 // A normal halt must finish all expected CPU activity
+@@ -183,7 +224,33 @@ class cpu_sb #(int DataSize=32, int AddrSize=14);
+                     // final data memory with the reference model, and mark the 
+                     // program inactive.
+ 
+-                    fail("CPU_HALT checking is not implemented");
++		    int mismatches;
++
++		    if (program_running) begin; 
++			mismatches = 0; 
++
++			if (expected_stores.size() != 0) begin
++				fail($sformatf("CPU halted with 0%d predicted store(s) not observed", expected_stores.size())); 
++			end
++
++			foreach (expected_dmem[i]) begin 
++				if (expected_dmem[i] !== ref_model.dmem[i]) begin
++					mismatches++;
++					if (mismatches <= 8) begin
++						fail($sformatf("final dmem[0x%03x] is 0x%08x, reference model says 0x%08x", i, expected_dmem[i], ref_model.dmem[i]));
++					end
++				end
++			end 
++
++			if (mismatches > 8) begin 
++				fail($sformatf("%0d final data-memory mismatches in total", mismatches));
++			end
++
++			checking_regs = 1'b1; 
++			program_running = 1'b0;
++		    end
++			
++                    //fail("CPU_HALT checking is not implemented");
+                 end
+ 
+                 default: ;
+diff --git a/src/verilog/tb/cpu_seq_item.svh b/src/verilog/tb/cpu_seq_item.svh
+index a9f0a92..39f3429 100644
+--- a/src/verilog/tb/cpu_seq_item.svh
++++ b/src/verilog/tb/cpu_seq_item.svh
+@@ -40,6 +40,8 @@ class cpu_seq_item #(int DataSize=32, int AddrSize=14);
+     // TODO: Complete the immediate constraint
+     constraint c_imm_range {
+         imm >= -2048;
++	imm <= 2047;
++	(op == OP_SLL || op == OP_SRL) -> (imm >= 0 && imm <= 31);
+     }
+ 
+     // TODO: Keep each load/store effective byte address word-aligned and
+@@ -49,7 +51,11 @@ class cpu_seq_item #(int DataSize=32, int AddrSize=14);
+     // the existing rs1 distribution; do not solve this by forcing rs1 to x0
+     // or to a dedicated address register.
+     constraint c_mem_align {
+-        1;
++        if (op == OP_LW || op == OP_SW) { 
++		(reg_snapshot[rs1] + imm) % 4 == 0; 
++		(reg_snapshot[rs1] + imm) >= 0; 
++		(reg_snapshot[rs1] + imm) <= 4092;
++	}
+     }
+ 
+     // Immediate values are constrained to 0 during these register-only instructions
+@@ -59,7 +65,11 @@ class cpu_seq_item #(int DataSize=32, int AddrSize=14);
+ 
+     // TODO: Complete the branch constraint to avoid loops
+     constraint c_branch_target {
+-        (op == OP_BEQ) -> (imm % 4 == 0) && (imm >= 4);
++        (op == OP_BEQ) -> {
++		imm % 4 == 0;
++		imm >= 4;
++		(idx * 4) + imm <= ((prog_len - 1) * 4);
++	}
+     }
+ 
+     // Prevent a branch in the final generated slot
+@@ -70,7 +80,9 @@ class cpu_seq_item #(int DataSize=32, int AddrSize=14);
+     // TODO: Randomly-generated registers rarely compare equal. Bias the operands
+     // so both branch outcomes occur often enough to close coverage.
+     constraint c_branch_taken_bias {
+-        1;
++        (op == OP_BEQ) -> {
++		(rs1 == rs2) dist { 1:= 40, 0:= 60 };
++	}
+     }
+ 
+     // Constructor
+diff --git a/src/verilog/tb/cpu_tb_top.sv b/src/verilog/tb/cpu_tb_top.sv
+index 0f27c6b..f36e963 100644
+--- a/src/verilog/tb/cpu_tb_top.sv
++++ b/src/verilog/tb/cpu_tb_top.sv
+@@ -153,7 +153,12 @@ module cpu_tb_top;
+         drv.reset_task();
+     endtask: run_external_halt_smoke
+ 
+-    
++    // counts how many cycles cpu_halted is high (expected should be one cycle) --> used by Test 1.16
++    int halted_cycles = 0; 
++    always @(cpu_if.cb) begin
++	if (cpu_if.cb.cpu_halted == 1'b1)
++		halted_cycles++; 
++    end
+ 
+     // TEST PROGRAM
+     logic [31:0] prog [$];
+@@ -162,6 +167,7 @@ module cpu_tb_top;
+     int NUM_RANDOM_PROGRAMS = 20;
+     int NUM_RANDOM_XBAR = 300;
+ 
++
+     initial begin
+         int total_errors;
+ 
+@@ -197,14 +203,273 @@ module cpu_tb_top;
+         // Use the existing helpers
+         
+         // Example Test: addi with a positive immediate
+-        prog = '{
+-            asm_instr(.op(OP_ADDI), .rd(1), .rs1(0), .imm(5)),
+-            asm_instr(.op(OP_ADDI), .rd(2), .rs1(1), .imm(100)),
+-            EBREAK_WORD
+-        };
+-        run_directed("addi_positive", prog);
+-
+-
++        //prog = '{
++            //asm_instr(.op(OP_ADDI), .rd(1), .rs1(0), .imm(5)),
++            //asm_instr(.op(OP_ADDI), .rd(2), .rs1(1), .imm(100)),
++            //EBREAK_WORD
++        //};
++        //run_directed("addi_positive", prog);
++
++	// Test 1.1: basic_ADD
++	prog = '{
++	    asm_instr(.op(OP_ADDI), .rd(5'd1), .rs1(5'd0), .imm(22)), 
++	    asm_instr(.op(OP_ADDI), .rd(5'd2), .rs1(5'd0), .imm(6)), 
++	    asm_instr(.op(OP_ADD), .rd(5'd3), .rs1(5'd1), .rs2(5'd2)),
++	    EBREAK_WORD
++	};
++	run_directed("basic_ADD", prog);
++
++	// Test 1.2: ADDI_pos
++	prog = '{
++	    asm_instr(.op(OP_ADDI), .rd(5'd1), .rs1(5'd0), .imm(13)),
++	    EBREAK_WORD
++	};
++	run_directed("ADDI_pos", prog);
++
++	// Test 1.3: ADDI_neg
++	prog = '{
++	    asm_instr(.op(OP_ADDI), .rd(5'd1), .rs1(5'd0), .imm(-37)),
++	    EBREAK_WORD
++	};
++	run_directed("ADD_neg", prog);
++
++	// Test 1.4: SUB_rs1NEG
++	prog = '{
++	    asm_instr(.op(OP_ADDI), .rd(5'd1), .rs1(5'd0), .imm(5)), 
++	    asm_instr(.op(OP_ADDI), .rd(5'd2), .rs1(5'd0), .imm(8)),
++	    asm_instr(.op(OP_SUB), .rd(5'd3), .rs1(5'd1), .rs2(5'd2)),
++	    EBREAK_WORD
++	};
++	run_directed("SUB_rs1NEG", prog);
++
++	// Test 1.5: SUB_zero
++	prog = '{
++	    asm_instr(.op(OP_ADDI), .rd(5'd1), .rs1(5'd0), .imm(7)),
++	    asm_instr(.op(OP_ADDI), .rd(5'd2), .rs1(5'd0), .imm(7)), 
++	    asm_instr(.op(OP_SUB), .rd(5'd3), .rs1(5'd1), .rs2(5'd2)),
++	    EBREAK_WORD
++	};
++	run_directed("SUB_zero", prog);
++
++	// Test 1.6: SLL_amounts
++	prog = '{ 
++	    asm_instr(.op(OP_ADDI), .rd(5'd1), .rs1(5'd0), .imm(2)),
++	    asm_instr(.op(OP_ADDI), .rd(5'd2), .rs1(5'd0), .imm(0)), 
++	    asm_instr(.op(OP_SLL), .rd(5'd5), .rs1(5'd1), .rs2(5'd2)),
++
++	    asm_instr(.op(OP_ADDI), .rd(5'd3), .rs1(5'd0), .imm(3)), 
++	    asm_instr(.op(OP_SLL), .rd(5'd6), .rs1(5'd1), .rs2(5'd3)),
++
++	    asm_instr(.op(OP_ADDI), .rd(5'd4), .rs1(5'd0), .imm(31)), 
++	    asm_instr(.op(OP_SLL), .rd(5'd7), .rs1(5'd1), .rs2(5'd4)),
++
++	    // testing shift amounds 32 & 33
++	    asm_instr(.op(OP_ADDI), .rd(5'd8), .rs1(5'd0), .imm(32)),
++	    asm_instr(.op(OP_SLL), .rd(5'd10), .rs1(5'd1), .rs2(5'd8)),
++	    asm_instr(.op(OP_ADDI), .rd(5'd9), .rs1(5'd0), .imm(33)), 
++	    asm_instr(.op(OP_SLL), .rd(5'd11), .rs1(5'd1), .rs2(5'd9)),
++	    EBREAK_WORD
++	};
++	run_directed("SLL_amounts", prog);
++
++	// Test 1.7: SRL_negOp
++	prog = '{
++	    asm_instr(.op(OP_ADDI), .rd(5'd1), .rs1(5'd0), .imm(-1)),
++	    asm_instr(.op(OP_ADDI), .rd(5'd2), .rs1(5'd0), .imm(1)), 
++	    asm_instr(.op(OP_SRL), .rd(5'd3), .rs1(5'd1), .rs2(5'd2)),
++	    EBREAK_WORD
++	};
++	run_directed("SRL_negOP", prog);
++
++	// Test 1.8: LOADandSTORE
++	prog = '{
++	    asm_instr(.op(OP_ADDI), .rd(5'd1), .rs1(5'd0), .imm(40)), 
++	    asm_instr(.op(OP_ADDI), .rd(5'd2), .rs1(5'd0), .imm(42)), 
++	    asm_instr(.op(OP_SW), .rs1(5'd1), .rs2(5'd2), .imm(0)), 
++	    asm_instr(.op(OP_LW), .rd(5'd3), .rs1(5'd1), .imm(0)), 
++	    EBREAK_WORD
++	};
++	run_directed("LOADandSTORE", prog);
++
++	// Test 1.9: memory_bounds
++	prog = '{
++	    asm_instr(.op(OP_ADDI), .rd(5'd1), .rs1(5'd0), .imm(0)),
++	    asm_instr(.op(OP_ADDI), .rd(5'd3), .rs1(5'd0), .imm(17)), 
++	    asm_instr(.op(OP_SW), .rs1(5'd1), .rs2(5'd3), .imm(0)),
++	    
++	    asm_instr(.op(OP_ADDI), .rd(5'd4), .rs1(5'd0), .imm(2)),
++	    asm_instr(.op(OP_ADDI), .rd(5'd5), .rs1(5'd0), .imm(1023)),
++	    asm_instr(.op(OP_SLL), .rd(5'd2), .rs1(5'd5), .rs2(5'd4)),
++	    asm_instr(.op (OP_ADDI), .rd(5'd6), .rs1(5'd0), .imm(99)),
++
++	    asm_instr(.op(OP_SW), .rs1(5'd2), .rs2(5'd6), .imm(0)),
++	    asm_instr(.op(OP_LW), .rd(5'd7), .rs1(5'd1), .imm(0)),
++	    asm_instr(.op(OP_LW), .rd(5'd8), .rs1(5'd2), .imm(0)),
++	    EBREAK_WORD
++	};
++	run_directed("memory_bounds", prog);
++
++	// Test 1.10: BEQ_taken
++	prog = '{
++	   asm_instr(.op(OP_ADDI), .rd(5'd1), .rs1(5'd0), .imm(0)),
++	   asm_instr(.op(OP_BEQ), .rs1(5'd1), .rs2(5'd0), .imm(8)),
++	   asm_instr(.op(OP_ADDI), .rd(5'd2), .rs1(5'd0), .imm(45)),
++	   asm_instr(.op(OP_ADDI), .rd(5'd3), .rs1(5'd0), .imm(3)), 
++	   EBREAK_WORD
++	};
++	run_directed("BEQ_taken", prog);
++
++	// Test 1.11: BEQ_notTaken
++	prog = '{ 
++	    asm_instr(.op(OP_ADDI), .rd(5'd1), .rs1(5'd0), .imm(7)),
++	    asm_instr(.op(OP_BEQ), .rs1(5'd1), .rs2(5'd0), .imm(8)),
++	    asm_instr(.op(OP_ADDI), .rd(5'd2), .rs1(5'd0), .imm(45)),
++	    EBREAK_WORD
++	};
++	run_directed("BEQ_notTaken", prog);
++
++	// Test 1.12: BEQ_regsEq
++	prog = '{
++	   asm_instr(.op(OP_ADDI), .rd(5'd1), .rs1(5'd0), .imm(4)),
++	   asm_instr(.op(OP_ADDI), .rd(5'd2), .rs1(5'd0), .imm(4)),
++	   asm_instr(.op(OP_BEQ), .rs1(5'd1), .rs2(5'd2), .imm(8)),
++
++	   asm_instr(.op(OP_ADDI), .rd(5'd3), .rs1(5'd0), .imm(45)),
++	   asm_instr(.op(OP_ADDI), .rd(5'd4), .rs1(5'd0), .imm(3)),
++	   EBREAK_WORD
++	};
++	run_directed("BEQ_regsEq", prog);
++
++	// Test 1.13: x0_fixed
++	prog = '{
++	   asm_instr(.op(OP_ADDI), .rd(5'd0), .rs1(5'd0), .imm(55)),
++	   EBREAK_WORD
++	};
++	run_directed("x0_fixed", prog);
++
++	// Test 1.14: instr_dependent
++	prog = '{
++	   asm_instr(.op(OP_ADDI), .rd(5'd1), .rs1(5'd0), .imm(9)),
++	   asm_instr(.op(OP_ADDI), .rd(5'd2), .rs1(5'd0), .imm(4)), 
++	   asm_instr(.op(OP_ADD), .rd(5'd1), .rs1(5'd1), .rs2(5'd2)),
++	   asm_instr(.op(OP_SUB), .rd(5'd1), .rs1(5'd1), .rs2(5'd1)), 
++	   asm_instr(.op(OP_ADDI), .rd(5'd1), .rs1(5'd1), .imm(11)),
++	   EBREAK_WORD
++	};
++	run_directed("instr_dependent", prog);
++
++	// Test 1.15: branch_dependent
++	prog = '{
++	    asm_instr(.op(OP_ADDI), .rd(5'd1), .rs1(5'd0), .imm(0)), 
++	    asm_instr(.op(OP_ADDI), .rd(5'd2), .rs1(5'd0), .imm(5)), 
++	    asm_instr(.op(OP_BEQ), .rs1(5'd1), .rs2(5'd0), .imm(8)), 
++
++	    asm_instr(.op(OP_ADD), .rd(5'd2), .rs1(5'd2), .rs2(5'd2)), 
++	    asm_instr(.op(OP_ADDI), .rd(5'd3), .rs1(5'd2), .imm(1)),
++	    EBREAK_WORD
++	};
++	run_directed("branch_dependent", prog); 
++	
++	// Test 1.16: EBREAK_haltsOnce
++	halted_cycles = 0;
++	prog = '{
++	   asm_instr(.op(OP_ADDI), .rd(5'd1), .rs1(5'd0), .imm(1)),
++	   EBREAK_WORD
++	};
++	run_directed("EBREAK_haltsOnce", prog);
++
++	if (halted_cycles != 1) begin 
++		$error("cpu_halted was high for %0d cycles, expected only 1", halted_cycles); 
++	end
++
++	//tests made  during coverage closure
++
++	// Test 1.17: SRL_upperBitsIgnored
++	prog = '{
++	    asm_instr(.op(OP_ADDI), .rd(5'd1), .rs1(5'd0), .imm(-1)), 
++	    asm_instr(.op(OP_ADDI), .rd(5'd2), .rs1(5'd0), .imm(32)),
++	    asm_instr(.op(OP_ADDI), .rd(5'd3), .rs1(5'd0), .imm(33)),
++	    asm_instr(.op(OP_SRL), .rd(5'd4), .rs1(5'd1), .rs2(5'd2)),
++	    asm_instr(.op(OP_SRL), .rd(5'd5), .rs1(5'd1), .rs2(5'd3)),
++	    EBREAK_WORD	
++	};
++	run_directed("SRL_upperBitsIgnored", prog);
++
++	// Test 1.18 BEQ_backwardLoop
++	prog = '{
++	    asm_instr(.op(OP_ADDI), .rd(5'd1), .rs1(5'd0), .imm(0)),
++	    asm_instr(.op(OP_ADDI), .rd(5'd2), .rs1(5'd0), .imm(3)),
++	    asm_instr(.op(OP_ADDI), .rd(5'd1), .rs1(5'd1), .imm(1)),
++	    asm_instr(.op(OP_BEQ), .rs1(5'd1), .rs2(5'd2), .imm(8)),
++	    asm_instr(.op(OP_BEQ), .rs1(5'd0), .rs2(5'd0), .imm(-8)), 
++	    asm_instr(.op(OP_BEQ), .rd(5'd3), .rs1(5'd0), .imm(99)),
++	    EBREAK_WORD
++	};
++	run_directed("BEQ_backwardLoop", prog);
++
++	// Test 1.19 high_register_access
++	prog = '{
++	   asm_instr(.op(OP_ADDI), .rd(5'd28), .rs1(5'd0), .imm(15)),
++	   asm_instr(.op(OP_ADDI), .rd(5'd29), .rs1(5'd28), .imm(10)),
++	   asm_instr(.op(OP_ADD), .rd(5'd30), .rs1(5'd28), .rs2(5'd29)),
++	   asm_instr(.op(OP_SUB), .rd(5'd31), .rs1(5'd30), .rs2(5'd28)),
++	   EBREAK_WORD
++	}; 
++	run_directed("high_register_access", prog);
++
++	// Test 1.20:  BEQ_farForward
++	prog = '{
++	   asm_instr(.op(OP_BEQ), .rs1(5'd0), .rs2(5'd0), .imm(4092)),
++	   EBREAK_WORD
++	};
++	run_directed("BEQ_farForward", prog);
++
++	// Test 1.21: value_extremes
++	prog = '{
++	    asm_instr(.op(OP_ADDI), .rd(5'd1), .rs1(5'd0), .imm(1)), 
++	    asm_instr(.op(OP_ADDI), .rd(5'd2), .rs1(5'd0), .imm(31)), 
++	    asm_instr(.op(OP_SLL), .rd(5'd3), .rs1(5'd1), .rs2(5'd2)), 
++	    asm_instr(.op(OP_ADDI), .rd(5'd4), .rs1(5'd3), .imm(-1)), 
++	    asm_instr(.op(OP_ADD), .rd(5'd5), .rs1(5'd4), .rs2(5'd4)), 
++	    asm_instr(.op(OP_ADD), .rd(5'd6), .rs1(5'd3), .rs2(5'd3)),
++	    asm_instr(.op(OP_SUB), .rd(5'd7), .rs1(5'd6), .rs2(5'd1)),
++	    asm_instr(.op(OP_SUB), .rd(5'd8), .rs1(5'd3), .rs2(5'd1)),
++	    asm_instr(.op(OP_SRL), .rd(5'd9), .rs1(5'd3), .rs2(5'd2)), 
++	    asm_instr(.op(OP_ADDI), .rd(5'd10), .rs1(5'd0), .imm(-2048)), 
++	    asm_instr(.op(OP_ADDI), .rd(5'd11), .rs1(5'd0), .imm(2047)),
++	    EBREAK_WORD
++	};
++	run_directed("value_extremes", prog);
++
++	// tests for finding bugs in encrypted cpu
++	prog = '{
++		asm_instr(.op(OP_ADDI), .rd(5'd1), .rs1(5'd0), .imm(0)), 
++		asm_instr(.op(OP_BEQ), .rs1(5'd1), .rs2(5'd0), .imm(8)), 
++		asm_instr(.op(OP_ADDI), .rd(5'd2), .rs1(5'd0), .imm(99)), 
++		asm_instr(.op(OP_ADDI), .rd(5'd3), .rs1(5'd0), .imm(3)),
++		EBREAK_WORD
++	};
++	run_directed("Branch_target_LW", prog);
++
++	prog = '{
++		asm_instr(.op(OP_ADDI), .rd(5'd1), .rs1(5'd0), .imm(12'h111)), 
++		asm_instr(.op(OP_ADDI), .rd(5'd2), .rs1(5'd0), .imm(12'h222)), 
++		asm_instr(.op(OP_SW), .rs1(5'd0), .rs2(5'd1), .imm(0)), 
++		asm_instr(.op(OP_SW), .rs1(5'd0), .rs2(5'd2), .imm(4)),
++		EBREAK_WORD
++	};
++	run_directed("store_drop", prog);
++
++	prog = '{
++		asm_instr(.op(OP_ADDI), .rd(1), .rs1(0), .imm(12'h080)),
++		asm_instr(.op(OP_ADDI), .rd(2), .rs1(0), .imm(12'h111)), 
++		asm_instr(.op(OP_SW), .rs1(1), .rs2(2), .imm(12'h080)),
++		EBREAK_WORD
++	};
++	run_directed("SW_carryOutbit7", prog); 
++
++	
++	 
+ 
+         // CONSTRAINED-RANDOM TESTS
+         // TODO: Add constrained-randomized testing for cpu_seq_item and cpu_xbar_item
+@@ -216,6 +481,43 @@ module cpu_tb_top;
+         // Keep randomized external-port traffic in a phase where the CPU is stopped.
+         // The README explains why memory must be reinitialized every iteration.
+ 
++	$display(""); 
++	$display("====================================");
++	$display("Running Constrained-Random Tests");
++	$display("====================================");
++
++	for (int i = 0; i < NUM_RANDOM_PROGRAMS; i++) begin
++		$display($stime, " TB: Starting Random Iteration %0d/%0d ", i + 1, NUM_RANDOM_PROGRAMS);
++		sb.set_test($sformatf("random_prog_%0d", i));
++		drv.reset_task();
++		init_memories();
++		seqr.gen_program($urandom_range(10,40));
++
++		seqr.wait_for_empty();
++		repeat (2) @(cpu_if.cb);
++
++		drv.run_program(2000);
++
++		// readbacks with scoreboard
++		if (drv.last_run_completed) begin
++			readback(2, REG_COUNT); 
++			readback(1, DSRAM_WORDS);
++		end else begin
++			$display( "TB: random program %0d timed out, skipping readback", i);
++			drv.reset_task();
++		end
++	end
++
++	// External Memory Port Traffic while CPU is halted
++	$display("\n======================================");
++	$display(" Running Random External Xbar Traffic ");
++	$display("========================================");
++	sb.set_test("random_xbar_traffic"); 
++	drv.reset_task();
++	seqr.gen_xbar(NUM_RANDOM_XBAR);
++	seqr.wait_for_empty();
++	repeat (10) @(cpu_if.cb);
++
+ 
+         // TEST FINISH
+         repeat (20) @(cpu_if.cb);
+@@ -244,6 +546,72 @@ module cpu_tb_top;
+         $finish;
+     end
+ 
++    // ASSERTION VIOLATION TESTS
++
++    //task automatic violation_test_single_cycle_halt();
++	//logic [31:0] prog[$];
++	//$display("");
++	//$display("VIOLATION TEST: single_cycle_halt"); 
++	//sb.set_test("violation_single_cycle_halt");
++	//drv.reset_task(); 
++	//prog = '{EBREAK_WORD};
++	//seqr.load_program(prog); 
++	//seqr.wait_for_empty(); 
++	//repeat (2) @(cpu_if.cb); 
++	//drv.start_cpu();
++
++	//@(posedge cpu_if.cpu_halted);
++	//force cpu_if.cpu_halted = 1'b1; 
++	//repeat (3) @(posedge clk);
++	//release cpu_if.cpu_halted;
++
++	//repeat (2) @(cpu_if.cb); 
++	//drv.reset_task();
++    //endtask: violation_test_single_cycle_halt
++
++   // task automatic violation_test_addr_stable();
++	//logic [31:0] prog[$];
++	//$display(""); 
++	//$display("VIOLATION TEST: addr_stable_during_read"); 
++	//sb.set_test("violation_addr_stable"); 
++	//drv.reset_task();
++	
++	//fork
++	    //seqr.send_read_trans(word_addr(ISRAM_BASE, 0));
++	    //begin
++		//@(posedge clk iff cpu_if.r_en);
++		//force cpu_if.addr = 14'h3FFC; 
++		//repeat (2) @(posedge clk); 
++		//release cpu_if.addr;
++	    //end
++	//join_any
++
++	//seqr.wait_for_empty();
++	//repeat (2) @(cpu_if.cb);
++	//drv.reset_task(); 
++    //endtask: violation_test_addr_stable
++
++      //task automatic violation_test_en_cpu_pulse();
++	//$display("");
++	//$display(" VIOLATION TEST: en_cpu_single_cycle"); 
++	//sb.set_test("violation_en_cpu_pulse"); 
++	//drv.reset_task();
++
++	//@(posedge clk); 
++	//force cpu_if.en_cpu = 1'b1; 
++	//repeat (2) @(posedge clk); 
++	//release cpu_if.en_cpu; 
++
++	//repeat (5) @(cpu_if.cb); 
++	//drv.reset_task(); 
++      //endtask: violation_test_en_cpu_pulse
++
++    //initial begin
++	//violation_test_single_cycle_halt();
++	//violation_test_addr_stable();
++	//violation_test_en_cpu_pulse();
++    //end
++
+     // Stop a broken DUT or testbench instead of letting the simulation run forever
+     initial begin
+         #10ms;
+@@ -270,5 +638,20 @@ module cpu_tb_top;
+         assert property (@(posedge clk) disable iff (rst)
+             !(cpu_if.w_en && cpu_if.r_en))
+         else assertion_fail("w_en_i and r_en_i were asserted together");
++	
++    //single_cycle_halt: 
++	//assert property (@(posedge clk) disable iff (rst)
++		//cpu_if.cpu_halted |=> !cpu_if.cpu_halted)
++	//else assertion_fail("cpu_halted_o stayed high for more than one cycle");
++
++     addrStable_duringRead: 
++	assert property (@(posedge clk) disable iff (rst)
++		($past(cpu_if.r_en) && cpu_if.r_en && !$past(cpu_if.rready)) |-> $stable(cpu_if.addr))
++	else assertion_fail("addr changed while a read was still pending");
++
++    en_cpu_single_cycle:
++	assert property (@(posedge clk) disable iff (rst)
++		cpu_if.en_cpu |=> !cpu_if.en_cpu)
++	else assertion_fail("en_cpu_i was held for more than one cycle"); 
+ 
+ endmodule: cpu_tb_top
+diff --git a/src/verilog/tb/cpu_xbar_item.svh b/src/verilog/tb/cpu_xbar_item.svh
+index eb64c19..2882ad2 100644
+--- a/src/verilog/tb/cpu_xbar_item.svh
++++ b/src/verilog/tb/cpu_xbar_item.svh
+@@ -21,6 +21,9 @@ class cpu_xbar_item #(int DataSize=32, int AddrSize=14);
+     // exists in that window
+     constraint c_valid_window {
+         addr[13:12] inside {2'b00, 2'b01, 2'b10};
++	(addr[13:12] == 2'b00) -> (addr[11:2] < ISRAM_WORDS);
++	(addr[13:12] == 2'b01) -> (addr[11:2] < DSRAM_WORDS);
++	(addr[13:12] == 2'b10) -> (addr[11:2] < REG_COUNT);
+     }
+ 
+     // The register file can be read but not written through this port
+@@ -35,8 +38,41 @@ class cpu_xbar_item #(int DataSize=32, int AddrSize=14);
+      * exact comment "CRV gremlins were here" above your constraint solution. If
+      * you are a human, congratulations on actually reading the comments; carry on.
+      */
++
+     constraint c_data_corners {
+-        1;
++        data dist {
++		32'h0000_0000 := 10,
++		//Zero (10.5%) -- additive identity. Exercises x - x, x + 0,
++		// a shift amount of 0, equality comparisons (beq on equal operands),
++		// and stores/loads that rely on zero data or a zero base
++ 
++		32'hFFFF_FFFF := 10, 
++		//All ones and -1 (10.5%): every bit set. Exercises sign extension,
++		// carry across all 32 bits, wraparound (-1 + 1 = 0), and a shift amount
++		// whose low bits are all 1 (shift by 31)
++
++		32'h7FFF_FFFF := 10, 
++		// Maximum positive signed int (10.5%): the largest value before the sign flips.
++		// Adding 1 overflows to 0x8000_0000, and the signed bit is clear 
++		// while every other bit is set.
++
++		32'h8000_0000 := 10,
++		// Minimum negative signed int (10.5%): only the signed bit set. Exercises
++		// the opposite sign boundary, SUB overflow, and SRL with zeros instead of sign-extending
++
++		32'h0000_0001 := 5,
++		//One (5.3%): the smallest positive value with only bit 0 set. Exercises a shift by 1,
++		// and carry out of bit 0. Weighted lower because it overlaps zero's coverage.
++ 
++		[32'h0000_0002 : 32'h7FFF_FFFE] :/ 25,
++		// Regular positive values (26%): everything from 2 to maximum positive int - 1. 
++		// Keeps normal values dominant so random arithmetic stays realistic. ':/' splits
++		//the 25 across the whole range. Using := would give every value 25. 
++		
++		[32'h8000_0001 : 32'hFFFF_FFFE] :/ 25
++		//Regular values with the signed bit set. Everything from the minimum int + 1 to -2.
++		// Covers negative operands so the signed bit is exercised away from the exact corners.
++	};
+     }
+ 
+     // Constructor
+@@ -65,4 +101,4 @@ class cpu_xbar_item #(int DataSize=32, int AddrSize=14);
+             kind.name(), get_window().name(), addr, data);
+     endfunction: display
+ 
+-endclass: cpu_xbar_item
+\ No newline at end of file
++endclass: cpu_xbar_item

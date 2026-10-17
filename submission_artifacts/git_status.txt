@@ -1,0 +1,10 @@
+ M src/verilog/tb/cpu_driver.svh
+ M src/verilog/tb/cpu_monitor.svh
+ M src/verilog/tb/cpu_sb.svh
+ M src/verilog/tb/cpu_seq_item.svh
+ M src/verilog/tb/cpu_tb_top.sv
+ M src/verilog/tb/cpu_xbar_item.svh
+?? src/verilog/cpu/cpu_pkg.sv
+?? src/verilog/cpu/cpu_top.sv
+?? src/verilog/cpu/fetch.sv
+?? src/verilog/cpu/reg_file.sv

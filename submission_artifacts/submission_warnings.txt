@@ -1,0 +1,3 @@
+Missing or empty deliverable: testplan_initial.md
+Missing or empty deliverable: testplan_final.md
+Confirm that your bug report, minimized reproducer, and waveform/coverage screenshots are saved in the project.

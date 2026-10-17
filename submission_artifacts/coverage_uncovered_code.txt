@@ -1,0 +1,249 @@
+<><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><>
+<> User: adantam6
+
+Host: ece-rhelsrv
+
+Report date: Tue 06 Oct 2026 01:21:25 EDT
+
+Report options: -detail -text -metrics code -out /nethome/adantam6/design-verification-onboarding-F26/.submission-build.Gz90iP/artifacts/coverage_uncovered_code.txt -uncovered -source off
+
+Coverage database path: /nethome/adantam6/design-verification-onboarding-F26/sim/behav/WORKSPACE/cov_work/scope/member
+
+Coverage model files: /nethome/adantam6/design-verification-onboarding-F26/sim/behav/WORKSPACE/cov_work/scope/icc_720ee332_149f1415.ucm
+
+Coverage data files: /nethome/adantam6/design-verification-onboarding-F26/sim/behav/WORKSPACE/cov_work/scope/member/icc_720ee332_149f1415.ucd
+
+CCF files:  None
+
+
+Coverage database date: Tue 06 Oct 2026 01:21:13 EDT
+
+*** There were no refinement files applied ***
+
+ <>
+<><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><>
+
+Coverage Table Legend
+---------------------
+  EXCL       excluded using refinement rule
+  P-EXCL     excluded from parent
+  U-EXCL     excluded and unreachable by IEV
+  T-EXCL     excluded from type
+  S-EXCL     smart excluded using refinement rule
+  EXCL(S)    smart indirect excluded
+  EMPTY      all children are excluded
+  CONST      marked constant during simulation
+  IGN        marked ignored during simulation
+  UNG        marked ungradeable during simulation
+  DES        marked deselected during simulation
+  UNR        marked unreachable by IEV
+  UNG-Expr   expression marked ungradeable during simulation
+  UNG-Toggle toggle marked ungradeable during simulation
+
+
+Uncovered Block Detail Report, Instance Based
+=============================================
+
+Instance name: cpu_tb_top
+Type name: cpu_tb_top
+File name: /nethome/adantam6/design-verification-onboarding-F26/sim/behav/WORKSPACE/sym_links/cpu_tb_top.sv
+Number of uncovered blocks: 16 of 133
+Number of unreachable blocks: 0
+
+Count  Block Line  Kind                 Origin 
+-----------------------------------------------
+0      2     51    code block           50     
+0      13    78    a case item of       77     
+0      16    81    a case item of       77     
+0      22    92    code block           91     
+0      23    92    code block           92     
+0      24    95    code block           91     
+0      25    96    code block           91     
+0      26    96    code block           96     
+0      37    117   false part of        114    
+0      61    181   true part of         181    
+0      89    381   true part of         381    
+0      112   505   false part of        502    
+0      122   525   true part of         525    
+0      126   541   false part of        537    
+0      129   617   code block           617    
+0      131   624   true part of         624    
+
+Instance name: cpu_tb_top.dut.cpu
+Type name: cpu_top
+File name: /nethome/adantam6/design-verification-onboarding-F26/sim/behav/WORKSPACE/sym_links/cpu_top.sv
+Number of uncovered blocks: 6 of 65
+Number of unreachable blocks: 0
+
+Count  Block Line  Kind                 Origin 
+-----------------------------------------------
+0      11    168   a case item of       164    
+0      14    174   implicit else        174    
+0      17    180   implicit else        180    
+0      20    184   implicit else        184    
+0      23    190   implicit else        190    
+0      26    196   implicit else        196    
+
+Uncovered Expression Detail Report, Instance Based
+==================================================
+
+Expression coverage Table Legend
+---------------------
+  -      don't care
+  e      event for event-or expressions
+  O (odd), E (even), B (both), X (not scored),
+         I (marked ignore) for parity trees
+  Y (covered), N (not covered), C (constant), 
+  P (one or more inputs for this bit have been padded) for vector scoring, 
+  d=== , b=== shows which bit differs in vector scoring 
+  rval   Resulting value of the expression for coverage purposes given
+         the input values
+  <-n->  Shows the n-th term composition
+
+
+Uncovered Toggle Detail Report, Instance Based
+==============================================
+
+Instance name: cpu_tb_top.cpu_if
+Type name: cpu_if
+File name: /nethome/adantam6/design-verification-onboarding-F26/sim/behav/WORKSPACE/sym_links/cpu_if.sv
+Number of uncovered signal bits: 2 of 163
+Number of unreachable signal bits: 0
+Number of signal bits partially toggled(rise): 0 of 163
+Number of signal bits partially toggled(fall): 0 of 163
+
+Hit(Full)  Hit(Rise)  Hit(Fall)  Signal                    
+-----------------------------------------------------------
+0          0          0          addr[1]                   
+0          0          0          addr[0]                   
+
+Instance name: cpu_tb_top.dut
+Type name: chip_top
+File name: /nethome/adantam6/design-verification-onboarding-F26/sim/behav/WORKSPACE/sym_links/chip_top.sv
+Number of uncovered signal bits: 4 of 364
+Number of unreachable signal bits: 0
+Number of signal bits partially toggled(rise): 0 of 364
+Number of signal bits partially toggled(fall): 0 of 364
+
+Hit(Full)  Hit(Rise)  Hit(Fall)  Signal                    
+-----------------------------------------------------------
+0          0          0          addr_i[1]                 
+0          0          0          addr_i[0]                 
+0          0          0          core_isram_rdata[3]       
+0          0          0          core_isram_rdata[2]       
+
+Instance name: cpu_tb_top.dut.cpu
+Type name: cpu_top
+File name: /nethome/adantam6/design-verification-onboarding-F26/sim/behav/WORKSPACE/sym_links/cpu_top.sv
+Number of uncovered signal bits: 30 of 559
+Number of unreachable signal bits: 0
+Number of signal bits partially toggled(rise): 0 of 559
+Number of signal bits partially toggled(fall): 0 of 559
+
+Hit(Full)  Hit(Rise)  Hit(Fall)  Signal                    
+-----------------------------------------------------------
+0          0          0          isram_rdata_i[3]          
+0          0          0          isram_rdata_i[2]          
+0          0          0          instr[3]                  
+0          0          0          instr[2]                  
+0          0          0          current_pc[31]            
+0          0          0          current_pc[30]            
+0          0          0          current_pc[29]            
+0          0          0          current_pc[28]            
+0          0          0          current_pc[27]            
+0          0          0          current_pc[26]            
+0          0          0          current_pc[25]            
+0          0          0          current_pc[24]            
+0          0          0          current_pc[23]            
+0          0          0          current_pc[22]            
+0          0          0          current_pc[21]            
+0          0          0          current_pc[20]            
+0          0          0          current_pc[19]            
+0          0          0          current_pc[18]            
+0          0          0          current_pc[17]            
+0          0          0          current_pc[16]            
+0          0          0          current_pc[15]            
+0          0          0          current_pc[14]            
+0          0          0          current_pc[13]            
+0          0          0          current_pc[12]            
+0          0          0          current_pc[1]             
+0          0          0          current_pc[0]             
+0          0          0          opcode[3]                 
+0          0          0          opcode[2]                 
+0          0          0          imm_B[0]                  
+0          0          0          branch_addr[0]            
+
+Instance name: cpu_tb_top.dut.cpu.u_fetch
+Type name: fetch
+File name: /nethome/adantam6/design-verification-onboarding-F26/sim/behav/WORKSPACE/sym_links/fetch.sv
+Number of uncovered signal bits: 48 of 157
+Number of unreachable signal bits: 0
+Number of signal bits partially toggled(rise): 0 of 157
+Number of signal bits partially toggled(fall): 0 of 157
+
+Hit(Full)  Hit(Rise)  Hit(Fall)  Signal                    
+-----------------------------------------------------------
+0          0          0          isram_rdata_i[3]          
+0          0          0          isram_rdata_i[2]          
+0          0          0          instr_o[3]                
+0          0          0          instr_o[2]                
+0          0          0          pc_o[31]                  
+0          0          0          pc_o[30]                  
+0          0          0          pc_o[29]                  
+0          0          0          pc_o[28]                  
+0          0          0          pc_o[27]                  
+0          0          0          pc_o[26]                  
+0          0          0          pc_o[25]                  
+0          0          0          pc_o[24]                  
+0          0          0          pc_o[23]                  
+0          0          0          pc_o[22]                  
+0          0          0          pc_o[21]                  
+0          0          0          pc_o[20]                  
+0          0          0          pc_o[19]                  
+0          0          0          pc_o[18]                  
+0          0          0          pc_o[17]                  
+0          0          0          pc_o[16]                  
+0          0          0          pc_o[15]                  
+0          0          0          pc_o[14]                  
+0          0          0          pc_o[13]                  
+0          0          0          pc_o[12]                  
+0          0          0          pc_o[1]                   
+0          0          0          pc_o[0]                   
+0          0          0          next_pc[31]               
+0          0          0          next_pc[30]               
+0          0          0          next_pc[29]               
+0          0          0          next_pc[28]               
+0          0          0          next_pc[27]               
+0          0          0          next_pc[26]               
+0          0          0          next_pc[25]               
+0          0          0          next_pc[24]               
+0          0          0          next_pc[23]               
+0          0          0          next_pc[22]               
+0          0          0          next_pc[21]               
+0          0          0          next_pc[20]               
+0          0          0          next_pc[19]               
+0          0          0          next_pc[18]               
+0          0          0          next_pc[17]               
+0          0          0          next_pc[16]               
+0          0          0          next_pc[15]               
+0          0          0          next_pc[14]               
+0          0          0          next_pc[13]               
+0          0          0          next_pc[12]               
+0          0          0          next_pc[1]                
+0          0          0          next_pc[0]                
+
+Instance name: cpu_tb_top.dut.mem_ctrl
+Type name: memory_controller
+File name: /nethome/adantam6/design-verification-onboarding-F26/sim/behav/WORKSPACE/sym_links/memory_controller.sv
+Number of uncovered signal bits: 4 of 358
+Number of unreachable signal bits: 0
+Number of signal bits partially toggled(rise): 0 of 358
+Number of signal bits partially toggled(fall): 0 of 358
+
+Hit(Full)  Hit(Rise)  Hit(Fall)  Signal                    
+-----------------------------------------------------------
+0          0          0          core_isram_rdata_o[3]     
+0          0          0          core_isram_rdata_o[2]     
+0          0          0          addr_i[1]                 
+0          0          0          addr_i[0]                 
+

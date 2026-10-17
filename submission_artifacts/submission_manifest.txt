@@ -1,0 +1,16 @@
+DV onboarding submission
+Generated UTC: 2026-10-06T05:21:35Z
+User: adantam6
+Branch: main
+Commit: 7c6179e18bd0e6cc82e4fa7cbb57157b486da5b6
+Member seed: 1
+Bug-hunt seed: 1
+Bug-hunt variant: 0
+
+Large generated state is intentionally omitted:
+- sim/behav/WORKSPACE except the curated logs and coverage reports
+- waveform databases (*.shm)
+- Xcelium snapshots and raw coverage databases
+- Git metadata, previous submission ZIPs, and staff-only answers
+
+Any screenshots and authored evidence elsewhere in the project are included.

@@ -1,0 +1,10 @@
+Member suite seed: 1
+Member suite result: PASS
+Member command exit code: 0
+
+Bug-hunt user: adantam6
+Bug-hunt variant: 0
+Bug-hunt seed: 1
+Bug-hunt scoreboard mismatches: 31
+Bug-hunt command exit code: 2 (nonzero is allowed only for intentional scoreboard mismatches)
+Bug-hunt infrastructure result: COMPLETE
